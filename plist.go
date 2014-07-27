@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 func next(data []byte) (skip, tag, rest []byte) {
@@ -168,6 +169,24 @@ func unmarshalValue(data []byte, v reflect.Value) (rest []byte, err error) {
 			return nil, fmt.Errorf("cannot unmarshal %s into non-bool %s", stag, v.Type())
 		}
 		v.SetBool(stag == "<true/>")
+		return data, nil
+
+	case "<date>":
+		if v.Type() != reflect.TypeOf(time.Time{}) {
+			return nil, fmt.Errorf("cannot unmarshal %s into %s (should be time.Time)", stag, v.Type())
+		}
+		body, etag, data := next(data)
+		if len(etag) == 0 {
+			return nil, fmt.Errorf("eof inside <date>")
+		}
+		if string(etag) != "</date>" {
+			return nil, fmt.Errorf("expected </date> but got %s", etag)
+		}
+		t, err := time.Parse(time.RFC3339, string(body))
+		if err != nil {
+			return nil, fmt.Errorf("cannot unmarshal %s into %s: %v", stag, v.Type(), err)
+		}
+		v.Set(reflect.ValueOf(t))
 		return data, nil
 	}
 	return nil, fmt.Errorf("unexpected tag %s", tag)
