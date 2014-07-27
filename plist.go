@@ -70,8 +70,11 @@ func unmarshalValue(data []byte, v reflect.Value) (rest []byte, err error) {
 	switch stag := string(tag); stag {
 	case "<dict>":
 		t := v.Type()
-		if v.Kind() != reflect.Struct {
-			return nil, fmt.Errorf("cannot unmarshal <dict> into non-struct %s", v.Type())
+		if v.Kind() != reflect.Struct && v.Kind() != reflect.Map {
+			return nil, fmt.Errorf("cannot unmarshal <dict> into non-struct/map %s", v.Type())
+		}
+		if v.Kind() == reflect.Map {
+			v.Set(reflect.MakeMap(v.Type()))
 		}
 	Dict:
 		for {
@@ -94,14 +97,25 @@ func unmarshalValue(data []byte, v reflect.Value) (rest []byte, err error) {
 				return nil, fmt.Errorf("unexpected tag %s inside <dict>", tag)
 			}
 			name := string(body)
-			var i int
-			for i = 0; i < t.NumField(); i++ {
-				f := t.Field(i)
-				if f.Name == name || f.Tag.Get("plist") == name {
-					data, err = unmarshalValue(data, v.Field(i))
-					continue Dict
+			if v.Kind() == reflect.Struct {
+				var i int
+				for i = 0; i < t.NumField(); i++ {
+					f := t.Field(i)
+					if f.Name == name || f.Tag.Get("plist") == name {
+						data, err = unmarshalValue(data, v.Field(i))
+						continue Dict
+					}
 				}
+			} else {
+				value := reflect.New(t.Elem()).Elem()
+				data, err = unmarshalValue(data, value)
+				if err != nil {
+					return nil, err
+				}
+				v.SetMapIndex(reflect.ValueOf(name), value)
+				continue Dict
 			}
+
 			data, err = skipValue(data)
 			if err != nil {
 				return nil, err
